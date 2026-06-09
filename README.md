@@ -39,8 +39,14 @@ The install guidance lives in this README so any AI coding assistant can install
 For OpenClaw channel plugin mode:
 
 ```text
-Please install the GoChat plugin for OpenClaw from https://github.com/JuDaXia/clawtile-extension.
-Use the default relay mode unless I provide a 6-digit connection code.
+Please install or update the GoChat plugin for OpenClaw from https://github.com/JuDaXia/clawtile-extension.
+First check if it is already installed: look for ~/.openclaw/extensions/gochat/package.json.
+- Not installed: install with the default relay mode unless I provide a 6-digit connection code.
+- Already installed: compare its "version" with the latest at
+  https://raw.githubusercontent.com/JuDaXia/clawtile-extension/main/package.json
+  - Older -> update by re-running the installer (it upgrades in place).
+  - Already latest and I just sent a new pairing code -> do NOT reinstall; this is a re-bind,
+    just run: openclaw gochat bind-agent --code <code> --server https://voinko.com
 Before installing, check Node.js, npm, and openclaw versions.
 After installing, verify ~/.openclaw/extensions/gochat/package.json exists and tell me how to start OpenClaw.
 Do not start OpenClaw automatically and do not modify unrelated OpenClaw config files.
@@ -49,9 +55,15 @@ Do not start OpenClaw automatically and do not modify unrelated OpenClaw config 
 For Hermes Agent native plugin mode:
 
 ```text
-Please install the GoChat plugin for Hermes Agent from https://github.com/JuDaXia/clawtile-extension.
-Use Hermes plugin mode, not the standalone skills-only flow:
-hermes plugins install JuDaXia/clawtile-extension --enable
+Please install or update the GoChat plugin for Hermes Agent from https://github.com/JuDaXia/clawtile-extension.
+First check if it is already installed: run `hermes plugins list` and look for gochat.
+- Not installed: hermes plugins install JuDaXia/clawtile-extension --enable
+- Already installed: compare its version with the latest at
+  https://raw.githubusercontent.com/JuDaXia/clawtile-extension/main/package.json
+  - Older -> update: hermes plugins install JuDaXia/clawtile-extension --enable (re-install upgrades).
+  - Already latest and I just sent a new pairing code -> do NOT reinstall; this is a re-bind,
+    just run mcp-configure below with the new code.
+Use Hermes plugin mode, not the standalone skills-only flow.
 If I provide a ClawTile mini-program pairing code, configure with:
 hermes gochat mcp-configure --code 123456 --server https://voinko.com
 Then show me the next command to start the online bridge.
@@ -61,12 +73,15 @@ Do not store my token in shell history; use the pairing code or Hermes .env flow
 For a Chinese assistant prompt:
 
 ```text
-请帮我从 https://github.com/JuDaXia/clawtile-extension 安装 GoChat 插件。
-如果是 OpenClaw，请使用默认 relay 模式安装并验证插件目录。
-如果是 Hermes Agent，请使用插件模式安装：hermes plugins install JuDaXia/clawtile-extension --enable，
-如果我提供了小程序配对码，请执行 hermes gochat mcp-configure --code 123456 --server https://voinko.com，
-最后告诉我如何启动 bridge。
-不要自动启动服务，不要修改无关配置，不要把 token 明文写进 shell 历史。
+请帮我从 https://github.com/JuDaXia/clawtile-extension 安装或更新 GoChat 插件。
+先检查是否已安装(OpenClaw: 看 ~/.openclaw/extensions/gochat/package.json;Hermes: hermes plugins list):
+- 未安装 → 正常安装(OpenClaw 默认 relay 模式;Hermes: hermes plugins install JuDaXia/clawtile-extension --enable)。
+- 已安装 → 和最新版比对(最新版取自 https://raw.githubusercontent.com/JuDaXia/clawtile-extension/main/package.json 的 version):
+  · 偏旧 → 更新(重跑安装即就地升级);
+  · 已最新且我又发了配对码 → 不要重装,这是重新绑定,直接用新码 bind-agent(OpenClaw)/ mcp-configure(Hermes)换绑即可。
+如果我提供了小程序配对码,绑定:openclaw gochat bind-agent --code 123456 --server https://voinko.com
+或 hermes gochat mcp-configure --code 123456 --server https://voinko.com。
+不要自动启动服务,不要修改无关配置,不要把 token 明文写进 shell 历史。
 ```
 
 ## Quick Install (Relay By Default)
@@ -159,6 +174,19 @@ hermes gochat bridge-run --once rec_xxx
        - Otherwise use OpenClaw channel plugin mode.
        - Run: openclaw --version   (if not found -> warn user to install OpenClaw first)
        - Determine OpenClaw state dir: echo $OPENCLAW_STATE_DIR (fallback: ~/.openclaw)
+
+     STEP 1.5 — If already installed, decide update vs re-bind (do NOT blindly reinstall)
+       - OpenClaw: if ~/.openclaw/extensions/gochat/package.json exists, read its "version".
+         Hermes: run `hermes plugins list` to see whether gochat is present and its version.
+       - Latest version = the "version" field of
+           https://raw.githubusercontent.com/JuDaXia/clawtile-extension/main/package.json
+       - Installed older than latest -> UPDATE (re-run install.sh / re-run `hermes plugins install
+         JuDaXia/clawtile-extension --enable`; both upgrade in place), then continue to bind.
+       - Installed == latest AND a new pairing code was provided -> this is a RE-BIND, not a reinstall.
+         Skip STEP 2 and just re-bind:
+           OpenClaw: openclaw gochat bind-agent --code <code> --server https://voinko.com
+           Hermes:   hermes gochat mcp-configure --code <code> --server https://voinko.com
+       - Not installed -> proceed to STEP 2.
 
      STEP 2 — Download and install
        - Run: curl -sL https://raw.githubusercontent.com/JuDaXia/clawtile-extension/main/install.sh | bash

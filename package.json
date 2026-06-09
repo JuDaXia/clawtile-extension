@@ -1,0 +1,43 @@
+{
+  "name": "@clawtile/gochat",
+  "version": "2026.5.14-plugin.44",
+  "description": "GoChat channel plugin and skills bridge for OpenClaw and Hermes Agent",
+  "type": "module",
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.5.7"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "setupEntry": "./setup-entry.ts",
+    "compat": {
+      "pluginApi": ">=2026.5.7",
+      "minGatewayVersion": "2026.5.7"
+    },
+    "channel": {
+      "id": "gochat",
+      "label": "GoChat",
+      "selectionLabel": "GoChat (custom)",
+      "docsPath": "/channels/gochat",
+      "docsLabel": "gochat",
+      "blurb": "Custom chat backend via HTTP webhook. Supports relay mode (Go backend) and direct mode (built-in API).",
+      "order": 90,
+      "quickstartAllowFrom": true
+    },
+    "install": {
+      "npmSpec": "@clawtile/gochat",
+      "defaultChoice": "npm",
+      "minHostVersion": ">=2026.5.7"
+    },
+    "hooks": {}
+  }
+}

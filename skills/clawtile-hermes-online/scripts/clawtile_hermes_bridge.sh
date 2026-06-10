@@ -310,7 +310,7 @@ PY
 }
 
 run_loop() {
-  local backoff=3 max_backoff=30 ev="" evid="" data rid title
+  local backoff=3 max_backoff=30 ev="" evid="" data rid title conn_start conn_secs
   log "bridge starting; SSE_URL=${SSE_URL} token=${CLAWTILE_TOKEN:0:13}... hermes=${HERMES_BIN}"
   # 启动时先补齐：bridge 不在线那段时间堆积的 summary_state=none 录音
   # 可能永远等不到 SSE 事件了（后端 PubSub 不持久化）。
@@ -318,6 +318,7 @@ run_loop() {
   while true; do
     ev=""
     evid=""
+    conn_start=$(date +%s)
     if curl --silent --no-buffer --show-error \
         --connect-timeout 15 \
         -H "Authorization: Bearer ${CLAWTILE_TOKEN}" \
@@ -373,12 +374,20 @@ run_loop() {
     else
       log "SSE stream errored"
     fi
-    log "reconnecting in ${backoff}s"
-    sleep "$backoff"
-    backoff=$((backoff + 3))
-    if [[ "$backoff" -gt "$max_backoff" ]]; then
-      backoff="$max_backoff"
+    # 连接活够 10 秒(正常的服务端周期断开,如 ~4min SSE 最大存活期)就把退避重置回
+    # 3 秒、立刻重连;只有秒级失败(连不上/鉴权错/瞬断)才递增退避避免狂连。在父进程里
+    # 算时长——旧代码没重置、退避只增到 30s,会让在线点每隔几分钟闪一下离线。
+    conn_secs=$(( $(date +%s) - conn_start ))
+    if [[ "$conn_secs" -ge 10 ]]; then
+      backoff=3
+    else
+      backoff=$((backoff + 3))
+      if [[ "$backoff" -gt "$max_backoff" ]]; then
+        backoff="$max_backoff"
+      fi
     fi
+    log "reconnecting in ${backoff}s (last session ${conn_secs}s)"
+    sleep "$backoff"
     # 每次准备重连 SSE 之前补一遍：断线期间错过的事件就靠它兜底。
     reconcile_pending || true
   done

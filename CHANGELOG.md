@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2026.6.9-plugin.46] - 2026-06-09
+
+### Fixed
+- bridge SSE reconnect backoff no longer creeps to the 30s cap on every reconnect. The reset (`backoff=3` on `connection.ack`) lived inside the `curl | while read` subshell and never reached the parent loop (the Hermes variant had no reset at all), so once the server started cycling the SSE periodically (its ~4min max-lifetime close added server-side to clear half-open "ghost" connections), each reconnect grew the delay until a live agent showed a ~30s "offline" gap every few minutes. Backoff is now reset by connection duration in the parent loop: a session that lasted ≥10s reconnects in 3s; only fast failures (connect refused / auth error / instant drop) grow the backoff toward the cap.
+
 ## [2026.5.26-plugin.45] - 2026-05-26
 
 ### Fixed

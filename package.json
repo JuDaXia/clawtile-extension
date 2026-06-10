@@ -1,6 +1,6 @@
 {
   "name": "@clawtile/gochat",
-  "version": "2026.5.14-plugin.44",
+  "version": "2026.6.9-plugin.46",
   "description": "GoChat channel plugin and skills bridge for OpenClaw and Hermes Agent",
   "type": "module",
   "dependencies": {

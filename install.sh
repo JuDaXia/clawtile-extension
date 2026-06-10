@@ -6,7 +6,7 @@ set -euo pipefail
 # Supports: macOS, Linux (amd64/arm64), WSL
 # ──────────────────────────────────────────────
 
-VERSION="2026.6.10-plugin.47"
+VERSION="2026.6.10-plugin.48"
 EXTENSION_NAME="gochat"
 OPENCLAW_MIN_VERSION="2026.5.7"
 REPO_URL="https://github.com/JuDaXia/clawtile-extension.git"

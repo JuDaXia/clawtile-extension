@@ -5,17 +5,24 @@ Invoked by the bridge when a `device.message` SSE event arrives. Runs the Hermes
 agent on the user's (transcribed) text and streams the reply back to the gochat
 cloud as turn progress, which the cloud relays down to the hardware.
 
-Contract is deliberately thin for cross-version robustness: we only depend on
-`hermes -z <prompt>` emitting the reply on stdout (the same invocation the
-summary bridge already relies on). No internal Hermes APIs, so it survives
-Hermes version drift. Tool-level progress (a richer stream) can later come from
-the gateway platform adapter / ACP; this runner forwards stdout as text deltas.
+Contract stays thin for cross-version robustness: the reply comes from
+`hermes -z <prompt>` on stdout. Two deliberate choices:
+
+  * The hardware-assistant guidance (concise Chinese, small-screen, use tools)
+    lives in an AGENTS.md inside a dedicated chat CWD, which `hermes -z` loads
+    automatically. So the prompt we pass is JUST the user's words — no preamble
+    echoed back on every message — and the guidance applies invisibly.
+  * `hermes -z` is one-shot: it builds a fresh agent per call and cannot resume
+    a prior session from the CLI. So this runner is single-turn by design;
+    durable multi-turn continuity is the job of the gateway/ACP adapter (later).
+    Sessions are tagged `source=clawtile-device` so they're identifiable.
 
 Env:
   CLAWTILE_AGENT_BASE  e.g. https://voinko.com/api/agent   (required)
   CLAWTILE_TOKEN       Bearer ct_a_xxx (hermes-scoped)       (required)
   HERMES_BIN           hermes binary (default: hermes)
   HERMES_MODEL         optional model override
+  CLAWTILE_CHAT_DIR    chat CWD holding AGENTS.md (default: ~/.clawtile-hermes-chat)
   CLAWTILE_CHAT_MAX_REPLY_CHARS  cap streamed reply (default 6000)
 
 Usage: clawtile_hermes_chat.py <turn_id> <user_text>
@@ -36,12 +43,43 @@ TOKEN = (os.environ.get("CLAWTILE_TOKEN") or "").strip()
 HERMES_BIN = (os.environ.get("HERMES_BIN") or "hermes").strip()
 HERMES_MODEL = (os.environ.get("HERMES_MODEL") or "").strip()
 MAX_REPLY = int(os.environ.get("CLAWTILE_CHAT_MAX_REPLY_CHARS") or "6000")
+CHAT_DIR = os.path.expanduser(os.environ.get("CLAWTILE_CHAT_DIR") or "~/.clawtile-hermes-chat")
+SESSION_SOURCE = "clawtile-device"
 
 # Flush buffered output to the cloud at most this often / once this many chars
 # accumulate — mirrors a stream consumer's edit throttle so we neither flood the
 # server with per-token POSTs nor lag the device.
 FLUSH_INTERVAL_S = 0.4
 FLUSH_CHARS = 24
+
+# Hardware-assistant guidance. Lives in AGENTS.md (loaded invisibly by `hermes
+# -z` from the CWD) so it never shows up in the prompt the user sees.
+_AGENTS_MD = """# ClawTile 硬件助手
+
+你是 ClawTile 硬件助手,用户通过墨水屏小设备跟你对话(语音已转成文字)。
+
+- 回复用简洁中文,先给结论,再给必要细节。
+- 适合小屏阅读:不要代码块、不要长篇大论、不要输出思考过程。
+- 需要时调用你的工具完成任务(查信息、记待办、安排日程等)。
+"""
+
+
+def _ensure_chat_dir() -> str:
+    """Create the chat CWD with an up-to-date AGENTS.md; return its path."""
+    try:
+        os.makedirs(CHAT_DIR, exist_ok=True)
+        agents_path = os.path.join(CHAT_DIR, "AGENTS.md")
+        existing = ""
+        if os.path.exists(agents_path):
+            with open(agents_path, "r", encoding="utf-8") as f:
+                existing = f.read()
+        if existing != _AGENTS_MD:
+            with open(agents_path, "w", encoding="utf-8") as f:
+                f.write(_AGENTS_MD)
+        return CHAT_DIR
+    except Exception:  # noqa: BLE001
+        # Fall back to the current dir; guidance is best-effort.
+        return os.getcwd()
 
 
 def _post_progress(turn_id: str, body: dict) -> None:
@@ -61,17 +99,8 @@ def _post_progress(turn_id: str, body: dict) -> None:
         sys.stderr.write(f"[chat] progress POST {body.get('state')} failed: {e}\n")
 
 
-def _build_prompt(text: str) -> str:
-    return (
-        "你是用户的硬件语音助手。用户通过 ClawTile 设备(墨水屏)对你说话,内容已转成文字。\n"
-        "请理解并执行用户的请求——需要时调用你的工具完成任务(查信息、记待办、安排日程等)。\n"
-        "用简洁中文回复,适合小屏显示;先给结论,再给必要细节。不要输出思考过程或代码块。\n\n"
-        f"用户说:{text}"
-    )
-
-
-def _hermes_cmd(prompt: str) -> list[str]:
-    cmd = [HERMES_BIN, "-z", prompt]
+def _hermes_cmd(text: str) -> list[str]:
+    cmd = [HERMES_BIN, "-z", text]
     if HERMES_MODEL:
         cmd += ["--model", HERMES_MODEL]
     return cmd
@@ -94,14 +123,17 @@ def main() -> int:
         _post_progress(turn_id, {"state": "error", "error": f"{HERMES_BIN} not found"})
         return 1
 
-    prompt = _build_prompt(user_text)
+    cwd = _ensure_chat_dir()
+    child_env = {**os.environ, "HERMES_SESSION_SOURCE": SESSION_SOURCE}
     try:
         proc = subprocess.Popen(
-            _hermes_cmd(prompt),
+            _hermes_cmd(user_text),
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             bufsize=1,
             text=True,
+            cwd=cwd,
+            env=child_env,
         )
     except Exception as e:  # noqa: BLE001
         _post_progress(turn_id, {"state": "error", "error": f"spawn hermes failed: {e}"})

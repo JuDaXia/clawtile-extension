@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2026.6.10-plugin.48] - 2026-06-10
+
+### Changed
+- Device→Hermes chat no longer prepends a verbose preamble to every message. The hardware-assistant guidance (concise Chinese, small-screen, use tools) moved into an `AGENTS.md` inside a dedicated chat CWD, which `hermes -z` loads automatically, so the prompt Hermes receives is just the user's words.
+
+### Known limitation
+- `hermes -z` (oneshot) builds a fresh agent per call and cannot resume a session from the CLI, so device chat is single-turn for now (each message is its own Hermes session, tagged `source=clawtile-device`). Durable multi-turn continuity will come from the gateway/ACP platform adapter.
+
 ## [2026.6.10-plugin.47] - 2026-06-10
 
 ### Added

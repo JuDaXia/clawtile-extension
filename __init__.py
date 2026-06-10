@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 
-PLUGIN_VERSION = "2026.5.14-plugin.44"
+PLUGIN_VERSION = "2026.6.10-plugin.47"
 DEFAULT_SERVER = "https://voinko.com"
 DEFAULT_MCP_NAME = "clawtile-agent"
 DEFAULT_MCP_ENV = "MCP_CLAWTILE_AGENT_API_KEY"
@@ -73,6 +73,9 @@ def _exchange_pair_code(server: str, code: str, display_name: str = "Hermes Agen
             "code": code,
             "display_name": display_name,
             "agent_hint": "hermes",
+            # Bind this credential to the hermes host so a user can also bind
+            # OpenClaw at the same time (dual binding, switched per device).
+            "host": "hermes",
             "client_info": {
                 "platform": "hermes-gochat-plugin",
                 "version": PLUGIN_VERSION,

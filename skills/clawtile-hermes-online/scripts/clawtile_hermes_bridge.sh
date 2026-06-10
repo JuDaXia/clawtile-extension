@@ -269,6 +269,26 @@ run_once() {
   process_recording "$rid" ""
 }
 
+# process_device_message handles a hardware-originated chat turn: run Hermes on
+# the user's (transcribed) text and stream the reply back as turn progress, which
+# the cloud relays down to the device. Delegated to a Python runner so streaming
+# stdout → progress POSTs is robust; the runner only depends on `hermes -z`.
+CHAT_RUNNER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/clawtile_hermes_chat.py"
+process_device_message() {
+  local turn_id="$1"
+  local text="$2"
+  if [ -z "$turn_id" ] || [ -z "$text" ]; then
+    log "WARN: device.message missing turn_id/text"
+    return 0
+  fi
+  log "processing device turn=${turn_id}"
+  CLAWTILE_AGENT_BASE="$AGENT_BASE" \
+  CLAWTILE_TOKEN="$CLAWTILE_TOKEN" \
+  HERMES_BIN="$HERMES_BIN" \
+  HERMES_MODEL="${HERMES_MODEL:-}" \
+    python3 "$CHAT_RUNNER" "$turn_id" "$text" >>"$BRIDGE_LOG" 2>&1
+}
+
 # reconcile_pending 拉一次还没有总结的已转写录音，逐条处理。SSE 是内存事件，
 # 后端不会重放；bridge 重启、网络断线、STT 完成时 bridge 不在线都会让事件
 # 永久丢失。每次进入 / 重连 SSE 之前调一次这个就能补齐。
@@ -358,6 +378,19 @@ run_loop() {
                   continue
                 fi
                 process_recording "$rid" "$title" &
+                ;;
+              device.message)
+                turn_id="$(printf '%s' "$data" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("turn_id") or "").strip())' 2>/dev/null || true)"
+                dm_text="$(printf '%s' "$data" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("text") or "")' 2>/dev/null || true)"
+                if [[ -z "$turn_id" ]]; then
+                  log "WARN: device.message missing turn_id: ${data}"
+                  continue
+                fi
+                if already_seen "$turn_id"; then
+                  log "skip duplicate device turn ${turn_id}"
+                  continue
+                fi
+                process_device_message "$turn_id" "$dm_text" &
                 ;;
               connection.ack)
                 log "SSE connected"

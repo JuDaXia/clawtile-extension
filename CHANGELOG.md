@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2026.6.10-plugin.47] - 2026-06-10
+
+### Added
+- Hermes bridge now handles `device.message` SSE events: hardware-originated chat turns (transcribed voice or text from the mini-program) run the Hermes agent and stream the reply back to the gochat cloud as turn progress, which is relayed to the device. New runner `skills/clawtile-hermes-online/scripts/clawtile_hermes_chat.py` streams `hermes -z` stdout into `POST /api/agent/turns/:id/progress` (delta → final). Version-robust: depends only on the `hermes -z <prompt>` contract, no internal Hermes APIs.
+- Pairing exchange now sends `host: "hermes"` so a user can bind both OpenClaw and Hermes at once (dual binding), switched per device server-side.
+
 ## [2026.6.9-plugin.46] - 2026-06-09
 
 ### Fixed

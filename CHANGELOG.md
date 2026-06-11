@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2026.6.10-plugin.52] - 2026-06-11
+
+### Added
+- Stop support: the adapter handles a `device.stop` SSE event by injecting `/stop` for the same chat_id, so the Hermes gateway cancels the in-flight agent run for that session (the user tapped 停止 in the mini-program). The turn mapping is cleared so the cancelled run's late send/edit are ignored.
+
 ## [2026.6.10-plugin.51] - 2026-06-11
 
 ### Fixed

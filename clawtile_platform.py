@@ -197,6 +197,9 @@ class ClawtileAdapter(BasePlatformAdapter):
                     data_lines.append(line[len("data:"):].lstrip())
 
     async def _handle_sse_event(self, event_type: Optional[str], data: str) -> None:
+        if event_type == "device.stop":
+            await self._handle_stop(data)
+            return
         if event_type != "device.message":
             return
         try:
@@ -233,6 +236,39 @@ class ClawtileAdapter(BasePlatformAdapter):
         logger.info("ClawTile device turn %s -> agent (chat=%s)", turn_id, chat_id)
         # Returns quickly; the agent runs in the background and streams the reply
         # back through send()/edit_message().
+        await self.handle_message(event)
+
+    async def _handle_stop(self, data: str) -> None:
+        # The user tapped 停止. Inject "/stop" for the same chat_id so the gateway
+        # cancels the in-flight run for that session (handle_message routes /stop
+        # through _dispatch_active_session_command when a run is active).
+        try:
+            payload = json.loads(data)
+        except Exception:  # noqa: BLE001
+            return
+        if not self._message_handler:
+            return
+        chat_id = (
+            str(payload.get("device_id") or "").strip()
+            or str(payload.get("session_id") or "").strip()
+            or DEFAULT_CHAT_ID
+        )
+        # Drop the turn mapping so any late send/edit from the cancelled run is
+        # ignored (the cloud already closed the turn).
+        self._turn_by_chat.pop(chat_id, None)
+        source = self.build_source(
+            chat_id=chat_id,
+            chat_name="ClawTile 设备",
+            chat_type="dm",
+            user_id=chat_id,
+            user_name="ClawTile",
+        )
+        event = MessageEvent(
+            text="/stop",
+            message_type=MessageType.TEXT,
+            source=source,
+        )
+        logger.info("ClawTile stop -> /stop (chat=%s)", chat_id)
         await self.handle_message(event)
 
     # ---- outbound: reply -> cloud ----

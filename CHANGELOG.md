@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2026.6.10-plugin.49] - 2026-06-10
+
+### Added
+- The Hermes gateway platform adapter is now part of THIS plugin — one install does everything. `register(ctx)` registers the CLI command, the skill, AND a `clawtile` gateway messaging platform (`clawtile_platform.py`). When `hermes gateway` runs, device chat flows through a persistent per-conversation Hermes session (real multi-turn continuity + streamed reply via `send`/`edit_message` → `/turns/:id/progress`), instead of the one-shot `hermes -z` bridge that opened a fresh session per message. The platform reuses the token `mcp-configure` already saved (`MCP_CLAWTILE_AGENT_API_KEY` in `~/.hermes/.env`) via `env_enablement_fn`, so binding once is enough — no extra config. Gateway/httpx imports stay lazy so the CLI-context plugin load never pulls gateway modules.
+
 ## [2026.6.10-plugin.48] - 2026-06-10
 
 ### Changed

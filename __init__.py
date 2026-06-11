@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 
-PLUGIN_VERSION = "2026.6.10-plugin.48"
+PLUGIN_VERSION = "2026.6.10-plugin.49"
 DEFAULT_SERVER = "https://voinko.com"
 DEFAULT_MCP_NAME = "clawtile-agent"
 DEFAULT_MCP_ENV = "MCP_CLAWTILE_AGENT_API_KEY"
@@ -282,6 +282,68 @@ def _handle_cli(args: Any) -> None:
     fn(args)
 
 
+# ---- ClawTile gateway platform adapter (merged so one install does it all) ----
+# Lives in this same plugin: register(ctx) registers the CLI command, the skill,
+# AND a gateway messaging platform. `hermes gateway` loads this standalone plugin
+# (it's in plugins.enabled) and honors register_platform — the platform gives the
+# device chat a persistent per-conversation Hermes session (real multi-turn),
+# unlike the one-shot `hermes -z` bridge. Keep ALL gateway/httpx imports lazy so
+# loading this plugin in the CLI context never pulls gateway modules.
+
+_clawtile_adapter_mod = None
+
+
+def _clawtile_base_token() -> "tuple[str, str]":
+    base = (os.environ.get("CLAWTILE_AGENT_BASE") or "").strip().rstrip("/") or _agent_base(DEFAULT_SERVER)
+    token = (os.environ.get("CLAWTILE_TOKEN") or os.environ.get(DEFAULT_MCP_ENV) or "").strip()
+    if not token:
+        try:
+            from hermes_cli.config import get_env_value
+
+            token = (get_env_value(DEFAULT_MCP_ENV) or "").strip()
+        except Exception:
+            token = ""
+    return base, token
+
+
+def _clawtile_check() -> bool:
+    try:
+        import httpx  # noqa: F401
+    except Exception:
+        return False
+    _, token = _clawtile_base_token()
+    return bool(token)
+
+
+def _clawtile_validate(config: Any) -> bool:
+    extra = getattr(config, "extra", {}) or {}
+    base, token = _clawtile_base_token()
+    token = token or str(extra.get("token") or "").strip()
+    return bool(base and token)
+
+
+def _clawtile_env_enablement() -> "dict | None":
+    base, token = _clawtile_base_token()
+    if base and token:
+        return {"agent_base": base, "token": token}
+    return None
+
+
+def _make_clawtile_adapter(cfg: Any):
+    # Lazy file-path load so __init__.py never imports gateway/httpx at module
+    # load time (which would break the CLI-context plugin load).
+    global _clawtile_adapter_mod
+    if _clawtile_adapter_mod is None:
+        import importlib.util
+
+        path = _plugin_dir() / "clawtile_platform.py"
+        spec = importlib.util.spec_from_file_location("gochat_clawtile_platform", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _clawtile_adapter_mod = mod
+    return _clawtile_adapter_mod.ClawtileAdapter(cfg)
+
+
 def register(ctx: Any) -> None:
     skill = _plugin_dir() / "skills" / "clawtile-hermes-online" / "SKILL.md"
     if skill.exists():
@@ -298,3 +360,26 @@ def register(ctx: Any) -> None:
         setup_fn=_setup_cli,
         handler_fn=_handle_cli,
     )
+
+    # Gateway messaging platform — persistent device-chat sessions + streaming.
+    # check_fn/env_enablement reuse the token `mcp-configure` already saved to
+    # ~/.hermes/.env, so binding once is enough; no extra config needed.
+    try:
+        ctx.register_platform(
+            name="clawtile",
+            label="ClawTile",
+            adapter_factory=_make_clawtile_adapter,
+            check_fn=_clawtile_check,
+            validate_config=_clawtile_validate,
+            required_env=["CLAWTILE_TOKEN"],
+            install_hint="Bind with `hermes gochat mcp-configure --code <code>`; the token is reused automatically.",
+            emoji="🐱",
+            env_enablement_fn=_clawtile_env_enablement,
+            platform_hint=(
+                "你正在通过 ClawTile 硬件(墨水屏小设备)和用户对话,用户的话是语音转成的文字。"
+                "回复用简洁中文、先给结论,不要代码块或长篇;需要时调用工具完成任务。"
+            ),
+        )
+    except AttributeError:
+        # Older hosts without register_platform: CLI + skill still work.
+        pass

@@ -79,6 +79,13 @@ class ClawtileAdapter(BasePlatformAdapter):
     def name(self) -> str:
         return "ClawTile"
 
+    @property
+    def enforces_own_access_policy(self) -> bool:
+        # Inbound device messages are already authenticated by the gochat cloud
+        # (bearer token + device binding) before they reach us, so the gateway
+        # must NOT re-apply its env-allowlist default-deny to them.
+        return True
+
     async def get_chat_info(self, chat_id: str) -> Dict[str, Any]:
         return {"name": "ClawTile 设备", "type": "dm", "id": chat_id}
 
@@ -196,7 +203,27 @@ class ClawtileAdapter(BasePlatformAdapter):
         turn_id = self._turn_by_chat.get(chat_id)
         if not turn_id:
             return SendResult(success=False, error="no active turn for chat")
-        await self._post_delta(turn_id, content)
+        # The gateway marks the final, non-streamed agent reply with
+        # metadata.notify=True (base.py ~4238). Everything else arriving via
+        # send() — one-time system notices (home-channel hint, gpt-5.5
+        # compaction note), streamed first-chunks — is NOT the authoritative
+        # reply, so we must not let it write the turn (that's what clobbered the
+        # reply and left the turn unfinalized → spinner). Streamed text still
+        # flows through edit_message(); the streamed final is edit_message(
+        # finalize=True). So: only a notify=True send finalizes here.
+        if metadata and metadata.get("notify"):
+            await self._post_progress(turn_id, {"state": "final", "text": content})
+            self._sent_len.pop(turn_id, None)
+            if self._turn_by_chat.get(chat_id) == turn_id:
+                self._turn_by_chat.pop(chat_id, None)
+        else:
+            # Not the authoritative reply: a one-time system notice (home-channel
+            # hint, gpt-5.5 compaction note) or a streamed first-chunk. Deliver it
+            # as a notice marker on the turn — NOT into reply_text, so it neither
+            # clobbers the real reply nor leaves the turn unfinalized.
+            await self._post_progress(
+                turn_id, {"state": "tool", "tool": {"kind": "notice", "text": content}}
+            )
         return SendResult(success=True, message_id=turn_id)
 
     async def edit_message(
@@ -213,6 +240,11 @@ class ClawtileAdapter(BasePlatformAdapter):
             # so any best-effort delta drift is corrected here.
             await self._post_progress(turn_id, {"state": "final", "text": content})
             self._sent_len.pop(turn_id, None)
+            # Clear the mapping so a later gateway notice (home-channel hint, cron
+            # result, cross-platform message) delivered via send() to this chat
+            # can't overwrite the finished reply.
+            if self._turn_by_chat.get(chat_id) == turn_id:
+                self._turn_by_chat.pop(chat_id, None)
         else:
             await self._post_delta(turn_id, content)
         return SendResult(success=True, message_id=turn_id)

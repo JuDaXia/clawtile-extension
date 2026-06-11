@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2026.6.10-plugin.50] - 2026-06-11
+
+### Fixed
+- Gateway platform adapter is now correct end-to-end (verified live):
+  - `enforces_own_access_policy = True` — device messages are already authed by the gochat cloud (token + binding), so the gateway must not re-deny them under its env-allowlist default-deny.
+  - Only the final agent reply (gateway marks it `metadata.notify=True`) writes `reply_text` and finalizes the turn — fixes the mini-program "send button spins forever" (the turn now reliably reaches `final`).
+  - One-time system notices (home-channel hint, gpt-5.5 compaction note) are delivered as `tool` notice markers on the turn instead of being written into `reply_text` — they no longer clobber the real reply, and they are not dropped (the mini-program shows them as a system line).
+  - `get_chat_info` implemented (required abstract method); turn→chat mapping cleared on finalize so a later notice can't overwrite a finished reply.
+- Set `CLAWTILE_HOME_CHANNEL` (per device) suppresses the one-time home-channel onboarding prompt for the ClawTile platform.
+
 ## [2026.6.10-plugin.49] - 2026-06-10
 
 ### Added

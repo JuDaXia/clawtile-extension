@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 
-PLUGIN_VERSION = "2026.6.10-plugin.50"
+PLUGIN_VERSION = "2026.6.10-plugin.51"
 DEFAULT_SERVER = "https://voinko.com"
 DEFAULT_MCP_NAME = "clawtile-agent"
 DEFAULT_MCP_ENV = "MCP_CLAWTILE_AGENT_API_KEY"

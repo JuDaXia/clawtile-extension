@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2026.6.10-plugin.51] - 2026-06-11
+
+### Fixed
+- Gateway platform adapter reworked against the reference adapters (Feishu/Telegram/Slack) for robust reply delivery + token self-heal:
+  - Tool-using / long replies always stream via GatewayStreamConsumer: an initial `send()` (no notify) + `edit_message` deltas + a terminal `edit_message(finalize=True)`. The old adapter mislabeled that initial `send()` as a system notice, so the reply never reached `reply_text` and the device spun forever. Now EVERY reply path ends with a `final` carrying the full text (which the cloud replaces into `reply_text`); the initial send + mid deltas stream as best-effort `delta`s. Covers non-streamed (`send(notify=True)`), streamed, and tool-call replies.
+  - A `send()` with no active turn (post-turn gateway notice) is dropped rather than fabricating a reply on a finished turn.
+  - Token self-heal: the bearer token is re-read from the LIVE `~/.hermes/.env` on every (re)connect (via `load_env()`, since `os.environ`/`get_env_value` keep the value frozen at gateway start). So after a user re-pairs (new token), the SSE recovers automatically within the reconnect backoff — no more permanent 401 lockup, no gateway restart needed. SSE/POST 401s are logged and trigger a fresh-token reconnect.
+
 ## [2026.6.10-plugin.50] - 2026-06-11
 
 ### Fixed

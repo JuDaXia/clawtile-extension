@@ -11,7 +11,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$VERSION = "2026.5.14-plugin.44"
+$VERSION = "2026.6.10-plugin.52"
 $EXTENSION_NAME = "gochat"
 $OPENCLAW_MIN_VERSION = "2026.5.7"
 # github is the FALLBACK source — unreachable from mainland China.

@@ -14,13 +14,19 @@ $ErrorActionPreference = "Stop"
 $VERSION = "2026.5.14-plugin.44"
 $EXTENSION_NAME = "gochat"
 $OPENCLAW_MIN_VERSION = "2026.5.7"
-$REPO_TARBALL_URL = "https://codeload.github.com/JuDaXia/clawtile-extension/tar.gz/refs/heads/main"
-$REMOTE_INSTALL_PS_URL = "https://raw.githubusercontent.com/JuDaXia/clawtile-extension/main/install.ps1"
+# github is the FALLBACK source — unreachable from mainland China.
+$REPO_TARBALL_FALLBACK = "https://codeload.github.com/JuDaXia/clawtile-extension/tar.gz/refs/heads/main"
+$REMOTE_INSTALL_PS_FALLBACK = "https://raw.githubusercontent.com/JuDaXia/clawtile-extension/main/install.ps1"
 $DEFAULT_RELAY_HTTP_URL = "https://voinko.com"
 $DEFAULT_RELAY_WS_URL = "wss://voinko.com/ws/plugin"
 $DEFAULT_LOCAL_PORT = 9750
 $RELAY_HTTP_URL = if ($env:GOCHAT_RELAY_HTTP_URL) { $env:GOCHAT_RELAY_HTTP_URL } else { $DEFAULT_RELAY_HTTP_URL }
 $RELAY_WS_URL = if ($env:GOCHAT_RELAY_WS_URL) { $env:GOCHAT_RELAY_WS_URL } else { $DEFAULT_RELAY_WS_URL }
+
+# PRIMARY source: the ClawTile server's self-hosted tarball + raw files under /ext
+# (China-friendly, no github). RELAY_HTTP_URL already points at this server.
+$REPO_TARBALL_URL = ($RELAY_HTTP_URL.TrimEnd('/')) + "/ext/clawtile-extension.tar.gz"
+$REMOTE_INSTALL_PS_URL = ($RELAY_HTTP_URL.TrimEnd('/')) + "/ext/raw/main/install.ps1"
 
 $Script:Platform = "windows"
 $Script:Arch = "unknown"
@@ -475,24 +481,32 @@ function Install-Remote {
     $tarballPath = Join-Path $downloadDir "clawtile-extension.tar.gz"
     New-Item -ItemType Directory -Path $downloadDir -Force | Out-Null
 
-    Write-Info "Downloading installer payload from GitHub..."
-    try {
-        $requestParams = @{
-            Uri = $REPO_TARBALL_URL
-            OutFile = $tarballPath
-            ErrorAction = "Stop"
+    Write-Info "Downloading installer payload (self-host, falling back to github)..."
+    $downloaded = $false
+    foreach ($url in @($REPO_TARBALL_URL, $REPO_TARBALL_FALLBACK)) {
+        if ([string]::IsNullOrWhiteSpace($url)) { continue }
+        try {
+            $requestParams = @{
+                Uri = $url
+                OutFile = $tarballPath
+                ErrorAction = "Stop"
+            }
+            $iwr = Get-Command "Invoke-WebRequest" -ErrorAction Stop
+            if ($iwr.Parameters.ContainsKey("UseBasicParsing")) {
+                $requestParams.UseBasicParsing = $true
+            }
+            Invoke-WebRequest @requestParams
+            $downloaded = $true
+            break
+        } catch {
+            Write-Warn "Download from $url failed; trying next source..."
         }
-        $iwr = Get-Command "Invoke-WebRequest" -ErrorAction Stop
-        if ($iwr.Parameters.ContainsKey("UseBasicParsing")) {
-            $requestParams.UseBasicParsing = $true
-        }
-        Invoke-WebRequest @requestParams
-    } catch {
-        Exit-WithError "Failed to download installer payload from GitHub. Check network access."
-    } finally {
+    }
+    if (-not $downloaded) {
         if (-not (Test-Path $tarballPath)) {
             Remove-DirIfExists $downloadDir
         }
+        Exit-WithError "Failed to download installer payload (self-host and github). Check network access."
     }
 
     try {

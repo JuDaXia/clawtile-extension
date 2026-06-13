@@ -9,12 +9,19 @@ set -euo pipefail
 VERSION="2026.6.10-plugin.52"
 EXTENSION_NAME="gochat"
 OPENCLAW_MIN_VERSION="2026.5.7"
-REPO_URL="https://github.com/JuDaXia/clawtile-extension.git"
-REPO_TARBALL_URL="https://codeload.github.com/JuDaXia/clawtile-extension/tar.gz/refs/heads/main"
+# github is the FALLBACK source — unreachable from mainland China.
+REPO_URL_FALLBACK="https://github.com/JuDaXia/clawtile-extension.git"
+REPO_TARBALL_FALLBACK="https://codeload.github.com/JuDaXia/clawtile-extension/tar.gz/refs/heads/main"
 DEFAULT_RELAY_HTTP_URL="https://voinko.com"
 DEFAULT_RELAY_WS_URL="wss://voinko.com/ws/plugin"
 RELAY_HTTP_URL="${GOCHAT_RELAY_HTTP_URL:-${DEFAULT_RELAY_HTTP_URL}}"
 RELAY_WS_URL="${GOCHAT_RELAY_WS_URL:-${DEFAULT_RELAY_WS_URL}}"
+
+# PRIMARY source is the ClawTile server's self-hosted git (smart HTTP) + tarball,
+# served under /ext. Works in mainland China with no github access. RELAY_HTTP_URL
+# already points at this server (default voinko.com, overridable per install).
+REPO_URL="${RELAY_HTTP_URL%/}/ext/clawtile-extension.git"
+REPO_TARBALL_URL="${RELAY_HTTP_URL%/}/ext/clawtile-extension.tar.gz"
 
 # ──────────────────────────────────────────────
 # Globals (ALL declared upfront for set -u)
@@ -426,17 +433,17 @@ try_auto_install_git() {
 
 download_repo_tarball() {
   local output_path="$1"
-
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "${REPO_TARBALL_URL}" -o "${output_path}"
-    return $?
-  fi
-
-  if command -v wget >/dev/null 2>&1; then
-    wget -qO "${output_path}" "${REPO_TARBALL_URL}"
-    return $?
-  fi
-
+  local url
+  # Try the self-hosted tarball first, then fall back to github.
+  for url in "${REPO_TARBALL_URL}" "${REPO_TARBALL_FALLBACK}"; do
+    [ -n "${url}" ] || continue
+    if command -v curl >/dev/null 2>&1; then
+      curl -fsSL "${url}" -o "${output_path}" && return 0
+    fi
+    if command -v wget >/dev/null 2>&1; then
+      wget -qO "${output_path}" "${url}" && return 0
+    fi
+  done
   return 1
 }
 
@@ -599,21 +606,25 @@ install_piped() {
 
   if command -v git &>/dev/null; then
     info "Cloning from ${REPO_URL}..."
-    git clone --depth 1 "${REPO_URL}" "${tmp_dir}/clawtile-extension" 2>&1 || {
-      fail "git clone failed. Check network or install git."
-      rm -rf "${tmp_dir}"
-      exit 1
-    }
+    if ! git clone --depth 1 "${REPO_URL}" "${tmp_dir}/clawtile-extension" 2>&1; then
+      warn "Clone from ${REPO_URL} failed; trying fallback ${REPO_URL_FALLBACK}..."
+      rm -rf "${tmp_dir}/clawtile-extension"
+      git clone --depth 1 "${REPO_URL_FALLBACK}" "${tmp_dir}/clawtile-extension" 2>&1 || {
+        fail "git clone failed (self-host and github). Check network or install git."
+        rm -rf "${tmp_dir}"
+        exit 1
+      }
+    fi
     install_from_source "${tmp_dir}/clawtile-extension"
     rm -rf "${tmp_dir}"
   elif command -v curl &>/dev/null || command -v wget &>/dev/null; then
-    info "git not found. Falling back to GitHub source tarball..."
+    info "git not found. Falling back to source tarball..."
     tarball="${tmp_dir}/clawtile-extension.tar.gz"
     if download_repo_tarball "${tarball}"; then
       install_from_tarball "${tarball}"
       rm -rf "${tmp_dir}"
     else
-      fail "GitHub source tarball download failed."
+      fail "Source tarball download failed (self-host and github)."
       fail "Refusing to fall back to npm because that may install an older plugin version."
       rm -rf "${tmp_dir}"
       exit 1

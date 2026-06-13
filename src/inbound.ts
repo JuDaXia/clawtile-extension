@@ -533,16 +533,23 @@ export async function handleGoChatInbound(params: {
       hasControlCommand,
     },
   });
-  const commandAuthorized = access.commandAuthorized;
+  // Agent-mode inbound (device.message / recording.transcribed) arrives ONLY over
+  // the authenticated cloud SSE — there is no untrusted DM sender to gate. The
+  // synthetic "clawtile-device" / "clawtile-agent" senders are not in any DM
+  // allowlist, so the dmPolicy gate below would drop them ("dmPolicy=open (not
+  // allowlisted)") and the user would never get a reply. The cloud already
+  // authorized the turn, so authorize unconditionally and skip the per-sender gate.
+  const agentModeTrusted = account.mode === "agent";
+  const commandAuthorized = agentModeTrusted ? true : access.commandAuthorized;
   const effectiveGroupAllowFrom = access.effectiveGroupAllowFrom;
 
   if (isGroup) {
-    if (access.decision !== "allow") {
+    if (!agentModeTrusted && access.decision !== "allow") {
       runtime.log?.(`gochat: drop group sender ${senderId} (reason=${access.reason})`);
       return;
     }
   } else {
-    if (access.decision !== "allow") {
+    if (!agentModeTrusted && access.decision !== "allow") {
       if (access.decision === "pairing") {
         await pairing.issueChallenge({
           senderId,
@@ -562,7 +569,7 @@ export async function handleGoChatInbound(params: {
     }
   }
 
-  if (access.shouldBlockControlCommand) {
+  if (!agentModeTrusted && access.shouldBlockControlCommand) {
     logInboundDrop({
       log: (msg) => runtime.log?.(msg),
       channel: CHANNEL_ID,

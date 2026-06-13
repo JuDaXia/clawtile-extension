@@ -213,9 +213,12 @@ class ClawtileAdapter(BasePlatformAdapter):
         if not self._message_handler:
             logger.warning("ClawTile: message handler not set yet, dropping turn %s", turn_id)
             return
+        # session_id wins so each mini-program conversation maps to its own
+        # gateway chat_id (= isolated Hermes session). Fall back to device_id for
+        # hardware messages, then the shared default.
         chat_id = (
-            str(payload.get("device_id") or "").strip()
-            or str(payload.get("session_id") or "").strip()
+            str(payload.get("session_id") or "").strip()
+            or str(payload.get("device_id") or "").strip()
             or DEFAULT_CHAT_ID
         )
         self._turn_by_chat[chat_id] = turn_id
@@ -248,9 +251,12 @@ class ClawtileAdapter(BasePlatformAdapter):
             return
         if not self._message_handler:
             return
+        # session_id wins so each mini-program conversation maps to its own
+        # gateway chat_id (= isolated Hermes session). Fall back to device_id for
+        # hardware messages, then the shared default.
         chat_id = (
-            str(payload.get("device_id") or "").strip()
-            or str(payload.get("session_id") or "").strip()
+            str(payload.get("session_id") or "").strip()
+            or str(payload.get("device_id") or "").strip()
             or DEFAULT_CHAT_ID
         )
         # Drop the turn mapping so any late send/edit from the cancelled run is

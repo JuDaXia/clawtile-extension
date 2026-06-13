@@ -135,6 +135,30 @@ export async function markAgentRecordingState(
   });
 }
 
+export type DeviceTurnProgress = {
+  state: "delta" | "tool" | "final" | "error";
+  text?: string;
+  error?: string;
+  tool?: Record<string, unknown>;
+  seq?: number;
+};
+
+// Stream a device-chat reply increment back to the cloud, which relays it to the
+// hardware / mini-program. `final.text` is authoritative (replaces reply_text);
+// `delta.text` appends; `error` fails the turn. Mirrors the Hermes adapter's
+// POST /api/agent/turns/{turn_id}/progress.
+export async function postTurnProgress(
+  account: ResolvedGoChatAccount,
+  turnId: string,
+  body: DeviceTurnProgress,
+): Promise<void> {
+  await agentFetchJson(account, `/turns/${encodeURIComponent(turnId)}/progress`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 export async function writeAgentSummary(params: {
   account: ResolvedGoChatAccount;
   recordingId: string;

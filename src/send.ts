@@ -2,6 +2,7 @@ import { resolveMarkdownTableMode } from "openclaw/plugin-sdk/config-runtime";
 import { convertMarkdownTables } from "openclaw/plugin-sdk/text-runtime";
 import { resolveGoChatAccount } from "./accounts.js";
 import { writeAgentSummary } from "./gochat/agent-client.js";
+import { isDeviceConversation, sendDeviceTurnReply } from "./gochat/device-chat.js";
 import { stripGoChatTargetPrefix } from "./normalize.js";
 import { getGoChatRuntime } from "./runtime.js";
 import type { CoreConfig, GoChatSendResult } from "./types.js";
@@ -262,6 +263,11 @@ export async function sendMessageGoChat(
   }
 
   if (account.mode === "agent") {
+    // Device chat (mini-program 对话) replies go to the turn-progress API; only
+    // recording conversations go to the summary endpoint.
+    if (isDeviceConversation(conversationId)) {
+      return await sendDeviceTurnReply(conversationId, message, account);
+    }
     return await sendAgentSummary(conversationId, message, account);
   }
 

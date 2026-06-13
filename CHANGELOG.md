@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2026.6.13-plugin.53] - 2026-06-13
+
+### Fixed
+- **OpenClaw 2026.6.x: `openclaw gochat bind-agent` (and the other `gochat`
+  subcommands) are exposed again.** 6.x builds its CLI command tree from the
+  channel entry's `registerCliMetadata` hook at the CLI parse phase; the
+  subcommands had only been wired in the runtime-only `registerFull` hook, so the
+  parser never saw them (`openclaw gochat bind-agent --code` → "does not recognize
+  --code"). The full command tree is now built in `registerCliMetadata` (shared
+  `src/cli.ts` + parse-time descriptors in `src/cli-descriptors.ts`); `registerFull`
+  no longer builds the CLI, to avoid double-registration in full mode.
+- **Agent mode: device chat and recording-summary turns are no longer dropped by
+  the DM allowlist.** `dmPolicy=open` gates DMs to allowlisted senders, which
+  silently dropped the synthetic `clawtile-device` / `clawtile-agent` senders
+  ("dmPolicy=open (not allowlisted)") so the mini-program 对话 never got a reply.
+  Agent-mode inbound arrives only over the authenticated cloud SSE, so the
+  per-sender DM gate (meant for relay/direct mode) is now skipped.
+
 ## [2026.6.10-plugin.52] - 2026-06-11
 
 ### Added

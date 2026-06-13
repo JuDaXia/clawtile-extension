@@ -6,7 +6,7 @@ set -euo pipefail
 # Supports: macOS, Linux (amd64/arm64), WSL
 # ──────────────────────────────────────────────
 
-VERSION="2026.6.10-plugin.52"
+VERSION="2026.6.13-plugin.53"
 EXTENSION_NAME="gochat"
 OPENCLAW_MIN_VERSION="2026.5.7"
 # github is the FALLBACK source — unreachable from mainland China.
@@ -508,10 +508,31 @@ install_from_tarball() {
   install_bundled_skills "${target}"
 }
 
+# OpenClaw 6.x requires compiled runtime output (dist/index.js) — `openclaw
+# plugins install` rejects raw TypeScript entries. Published artifacts should
+# ship dist/, but if it's missing (e.g. a source checkout), build it on the fly.
+ensure_built() {
+  local dir="$1"
+  [ -f "${dir}/dist/index.js" ] && return 0
+  [ -f "${dir}/build.mjs" ] || return 0
+  if ! command -v npm >/dev/null 2>&1; then
+    warn "npm not found; cannot compile the plugin — OpenClaw 6.x install may fail."
+    return 1
+  fi
+  info "Compiling plugin to dist/ (OpenClaw 6.x needs compiled output)..."
+  (cd "${dir}" && npm install --no-audit --no-fund >/dev/null 2>&1 && npm run build >/dev/null 2>&1) || {
+    warn "Plugin build failed; OpenClaw 6.x install may fail without dist/."
+    return 1
+  }
+  return 0
+}
+
 install_from_source() {
   local source_dir="$1"
   local extensions_dir
   extensions_dir="$(get_extensions_dir)"
+
+  ensure_built "${source_dir}" || true
 
   if [ -n "${OPENCLAW_BIN}" ] && [ -x "${OPENCLAW_BIN}" ]; then
     info "Installing via OpenClaw managed plugin installer..."

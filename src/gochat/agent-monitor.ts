@@ -15,6 +15,12 @@ import {
   type AgentRecording,
   type AgentEvent,
 } from "./agent-client.js";
+import {
+  clearDeviceTurn,
+  deviceConversationId,
+  failDeviceTurn,
+  recordDeviceTurn,
+} from "./device-chat.js";
 
 const INITIAL_BACKOFF_MS = 1_000;
 const MAX_BACKOFF_MS = 30_000;
@@ -113,8 +119,11 @@ export async function monitorGoChatAgentProvider(
   } = {},
 ): Promise<{ stop: () => void }> {
   const core = getGoChatRuntime();
-  const cfg = opts.config ?? (core.config.loadConfig() as CoreConfig);
-  const account = resolveGoChatAccount({ cfg, accountId: opts.accountId });
+  // cfg/account are re-resolved on every (re)connect below so a re-pair (new
+  // token written to the OpenClaw config) is picked up without a gateway restart
+  // — the Hermes adapter self-heals the same way.
+  let cfg = opts.config ?? (core.config.loadConfig() as CoreConfig);
+  let account = resolveGoChatAccount({ cfg, accountId: opts.accountId });
   const runtime = resolveLoggerBackedRuntime(
     opts.runtime,
     core.logging.getChildLogger(),
@@ -143,8 +152,56 @@ export async function monitorGoChatAgentProvider(
     }
   });
 
+  // device.message: a mini-program 对话 turn. Run the OpenClaw agent on the
+  // user's text and post the reply to /turns/{turn_id}/progress (the reply is
+  // routed there by send.ts via the agent-device: conversation prefix).
+  const handleDeviceMessage = async (ev: AgentEvent): Promise<void> => {
+    const data = ev.data ?? {};
+    const turnId = firstString(data.turn_id, ev.id);
+    const text = firstString(data.text);
+    const sessionId = firstString(data.session_id) || firstString(data.device_id) || "device";
+    if (!turnId || !text) {
+      return;
+    }
+    opts.statusSink?.({ lastInboundAt: Date.now() });
+    recordDeviceTurn(sessionId, turnId);
+    logger.info(`[gochat:${account.accountId}] device.message turn=${turnId} session=${sessionId}`);
+    const message: GoChatInboundMessage = {
+      messageId: `device.message:${turnId}`,
+      conversationId: deviceConversationId(sessionId),
+      conversationName: "ClawTile 对话",
+      senderId: "clawtile-device",
+      senderName: "ClawTile",
+      text,
+      attachments: [],
+      timestamp: Date.now(),
+      isGroupChat: false,
+    };
+    try {
+      await handleGoChatInbound({ message, account, config: cfg, runtime, statusSink: opts.statusSink });
+    } catch (error) {
+      logger.warn(
+        `[gochat:${account.accountId}] device.message failed turn=${turnId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      await failDeviceTurn(account, sessionId, turnId, error instanceof Error ? error.message : String(error));
+    }
+  };
+
   const handleEvent = async (ev: AgentEvent): Promise<void> => {
     if (ev.event === "connection.ack" || ev.event === "message") {
+      return;
+    }
+    if (ev.event === "device.message") {
+      await handleDeviceMessage(ev);
+      return;
+    }
+    if (ev.event === "device.stop") {
+      const data = ev.data ?? {};
+      const sessionId = firstString(data.session_id) || firstString(data.device_id);
+      const turnId = firstString(data.turn_id);
+      if (sessionId) {
+        clearDeviceTurn(sessionId, turnId); // drop the in-flight reply (cloud already finalized the turn)
+      }
       return;
     }
     if (ev.event !== "recording.transcribed" && ev.event !== "recording.summary_requested") {
@@ -217,6 +274,14 @@ export async function monitorGoChatAgentProvider(
     let backoff = INITIAL_BACKOFF_MS;
     while (!controller.signal.aborted && !externalSignal?.aborted) {
       try {
+        // Self-heal: re-read config + token on every (re)connect so a re-pair is
+        // adopted without a gateway restart. A 401 below just triggers a reconnect
+        // that picks up the freshly written token.
+        cfg = opts.config ?? (core.config.loadConfig() as CoreConfig);
+        account = resolveGoChatAccount({ cfg, accountId: opts.accountId });
+        if (!account.secret) {
+          throw new Error(`GoChat agent token not configured for account "${account.accountId}"`);
+        }
         await agentFetchJson(account, "/me");
         await reconcilePendingRecordings().catch((error) => {
           logger.warn(
